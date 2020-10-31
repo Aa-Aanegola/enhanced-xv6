@@ -52,7 +52,11 @@ int ps()
 	{
 		if(p->state == UNUSED)
 			continue;
-		int wtime = ticks - made_runnable;
+
+		int wtime = 0;
+
+		if(p->state == RUNNABLE)
+			ticks - made_runnable;
 
 		cprintf("%d \t %d \t\t %s \t ", p->pid, p->priority, states[p->state]);
 		cprintf("%d \t\t %d \t\t %d \t %d \t ", p->rtime, wtime, p->rounds, p->queue_number);

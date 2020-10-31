@@ -889,6 +889,7 @@ int enqueue(struct proc *p, int pos)
 			return -1;
 
 	// Otherwise we put it at the back of the queue
+	p->cur_ticks = 0;
 	p->queue_number = pos;
 	queue[pos][num_queued[pos]++] = p;
 
@@ -939,9 +940,10 @@ int ps()
 	{
 		if(p->state == UNUSED)
 			continue;
-		int wtime;
+		int wtime= 0;
 		
-		wtime = ticks - p->made_runnable;
+		if(p->state == RUNNABLE)
+			wtime = ticks - p->made_runnable;
 	
 		cprintf("%d \t %d \t\t %s \t ", p->pid, p->priority, states[p->state]);
 		cprintf("%d \t\t %d \t\t %d \t %d \t ", p->rtime, wtime, p->rounds, p->queue_number);
