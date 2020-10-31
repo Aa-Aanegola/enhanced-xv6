@@ -123,13 +123,12 @@ found:
   p->ctime = ticks;
   p->etime = -1;
   p->rtime = 0;
-  p->iotime = 0;
+  p->wtime = 0;
 
   p->priority = 60;
   p->rounds = 0;
   
   p->queue_number = 0;
-  p->queue_time = p->ctime;
   for(int i = 0; i<5; i++)
   	p->ticks[i] = 0;
   p->cur_ticks = 0;
@@ -171,6 +170,7 @@ userinit(void)
   acquire(&ptable.lock);
 
   p->state = RUNNABLE;
+  p->made_runnable = ticks;
 
   #ifdef MLFQ
   enqueue(p, 0);
@@ -241,6 +241,7 @@ fork(void)
   acquire(&ptable.lock);
 
   np->state = RUNNABLE;
+  np->made_runnable = ticks;
 
   #ifdef MLFQ
   enqueue(np, 0);
@@ -384,6 +385,7 @@ scheduler(void)
       c->proc = p;
       switchuvm(p);
       p->state = RUNNING;
+      p->wtime += ticks - p->made_runnable;
 
       /*#ifdef DEBUG
       cprintf("Switching to process with pid %d\n", p->pid);
@@ -422,6 +424,7 @@ scheduler(void)
       c->proc = chosen;
       switchuvm(chosen);
       chosen->state = RUNNING;
+      chosen->wtime += ticks - chosen->made_runnable;
 
       // Increment number of CPU rounds
       chosen->rounds++;
@@ -483,6 +486,8 @@ scheduler(void)
         c->proc = p;
         switchuvm(p);
         p->state = RUNNING;
+        p->wtime += ticks - p->made_runnable;
+
 
         p->rounds++;
 
@@ -504,13 +509,6 @@ scheduler(void)
 
     #ifdef MLFQ
 
-    if(ticks > temp*50)
-    {
-    	ps();
-    	temp += 1;
-    }
-
-
     // First check for new processes
     for(struct proc *p = ptable.proc; p<&ptable.proc[NPROC]; p++)
       if(p->state == RUNNABLE)
@@ -521,7 +519,7 @@ scheduler(void)
     {
     	for(int j = 0; j<num_queued[i]; j++)
     	{
-    		int age = ticks - queue[i][j]->queue_time;
+    		int age = ticks - queue[i][j]->made_runnable;
     		if(age > MAX_AGE)
     		{
     			struct proc *p = queue[i][j];
@@ -564,7 +562,8 @@ scheduler(void)
     	
   	switchuvm(p);
 		p->state = RUNNING;
-			
+		p->wtime += ticks - p->made_runnable;
+
 		swtch(&c->scheduler, p->context);
 		switchkvm();
 		
@@ -627,6 +626,7 @@ yield(void)
 {
   acquire(&ptable.lock);  //DOC: yieldlock
   myproc()->state = RUNNABLE;
+  myproc()->made_runnable = ticks;
   sched();
   release(&ptable.lock);
 }
@@ -677,8 +677,12 @@ sleep(void *chan, struct spinlock *lk)
   }
   // Go to sleep.
   p->chan = chan;
-  p->state = SLEEPING;
+  
+  if(p->state == RUNNABLE)
+  	p->wtime += ticks - p->made_runnable;
 
+  p->state = SLEEPING;
+  
   sched();
 
   // Tidy up.
@@ -707,6 +711,7 @@ wakeup1(void *chan)
       enqueue(p, p->queue_number);
       #endif
       p->state = RUNNABLE;
+      p->made_runnable = ticks;
     }
 }
 
@@ -739,6 +744,7 @@ kill(int pid)
       	p->cur_ticks = 0;
       	#endif
         p->state = RUNNABLE;
+        p->made_runnable = ticks;
       }
       release(&ptable.lock);
       return 0;
@@ -823,7 +829,7 @@ waitx(int *wtime, int *rtime)
         p->state = UNUSED;
       
         *rtime = p->rtime;
-        *wtime = p->etime - p->ctime - p->rtime - p->iotime;
+        *wtime = p->wtime;
 
         release(&ptable.lock);
         return pid;
@@ -884,7 +890,6 @@ int enqueue(struct proc *p, int pos)
 
 	// Otherwise we put it at the back of the queue
 	p->queue_number = pos;
-	p->queue_time = ticks;
 	queue[pos][num_queued[pos]++] = p;
 
   #ifdef DEBUG
@@ -935,23 +940,14 @@ int ps()
 		if(p->state == UNUSED)
 			continue;
 		int wtime;
-		if(p->etime == -1)
-			wtime = ticks - p->ctime - p->rtime - p->iotime;
-		else
-			wtime = p->etime - p->ctime - p->rtime - p->iotime;
+		
+		wtime = ticks - p->made_runnable;
+	
 		cprintf("%d \t %d \t\t %s \t ", p->pid, p->priority, states[p->state]);
 		cprintf("%d \t\t %d \t\t %d \t %d \t ", p->rtime, wtime, p->rounds, p->queue_number);
 		cprintf("%d \t %d \t %d \t %d \t %d\n", p->ticks[0], p->ticks[1], p->ticks[2], p->ticks[3], p->ticks[4]);
 	}
   return 0;
-}
-
-
-void update_io()
-{
-	for(struct proc *p = ptable.proc; p<&	ptable.proc[NPROC]; p++)
-        if(p->state == SLEEPING)
-        	p->iotime += 1;
 }
 
 

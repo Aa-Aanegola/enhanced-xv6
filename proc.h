@@ -53,12 +53,12 @@ struct proc {
   int rtime;
   int ctime;
   int etime;
-  int iotime;
+  int wtime;
+  int made_runnable;
   
   int rounds;
   int priority;
 
-  int queue_time;
   int queue_number;
   int ticks[5];
   int cur_ticks;

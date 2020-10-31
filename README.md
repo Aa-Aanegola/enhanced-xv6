@@ -27,7 +27,7 @@ waitx(int *wtime, int *rtime)
         #endif
      
         *rtime = p->rtime;
-        *wtime = p->etime - p->ctime - p->rtime - p->iotime;
+        *wtime = p->wtime;
 
     ...
 }
@@ -37,7 +37,8 @@ To allow the return of these values, the following values were added to the proc
 - ```ctime``` - The creation time of the process, this value is set in ```allocproc()```. 
 - ```etime``` - The end time of the process, this value is set in ```exit()```
 - ```rtime``` - The run time of the process, this value is updated whenever a timer interrupt is received in ```trap()```
-- ```iotime``` - The IO time of the process, this value is updated whenever a timer interrupt is received in ```trap()``` by polling over all the process, and manipulating the sleeping processes.  
+- ```wtime``` - The time that a process spends waiting for a CPU. We calculate this by checking whenever there is a change in state from ```RUNNABLE``` to any other state. 
+- ```made_runnable``` - The time when the state of the process changed to ```RUNNABLE```. This is mainly used to calculate wait time. 
 Each of these times are recorded in the 'ticks' unit which represents the inbuilt timer of the xv6 OS.
 
 ## ps
@@ -51,11 +52,8 @@ int ps()
 	{
 		if(p->state == UNUSED)
 			continue;
-		int wtime;
-		if(p->etime == -1)
-			wtime = ticks - p->ctime - p->rtime - p->iotime;
-		else
-			wtime = p->etime - p->ctime - p->rtime - p->iotime;
+		int wtime = ticks - made_runnable;
+
 		cprintf("%d \t %d \t\t %s \t ", p->pid, p->priority, states[p->state]);
 		cprintf("%d \t\t %d \t\t %d \t %d \t ", p->rtime, wtime, p->rounds, p->queue_number);
 		cprintf("%d \t %d \t %d \t %d \t %d\n", p->ticks[0], p->ticks[1], p->ticks[2], p->ticks[3], p->ticks[4]);
@@ -355,30 +353,30 @@ else
 After the process executes for the limit specified for its particular queue, we check if the process is still runnable. If it is then we demote it to the next queue. This removal and re-addition also helps emulate the round robin scheduling for the fourth queue. If it didn't exceed its time (voluntarily relinquished CPU) then we put it back in the same queue. This feature is easily exploitable as a process can stay in a queue indefinitely by taking only t-1 ticks where t is the upper bound. If the process is no longer runnable we simply remove it from the queue.  
 
 ## Testing schedulers
-To test the various scheduler, a common benchmark program had to be created. This benchmark program simulates IO and CPU time in a random order. To test how long they took, the time command implemented for waitx was used. The wait time of the benchmark program would roughly indicate the time taken by the child processes and hence we can use it to compare different algorithms.  
+To test the various scheduler, a common benchmark program had to be created. This benchmark program simulates IO and CPU time in a random order. To test how long they took, the time command implemented for waitx was used. The sleep time of the benchmark program would roughly indicate the time taken by the child processes and hence we can use it to compare different algorithms. The sleep time was computed as ```etime - ctime - rtime - wtime```. Although this is prone to error, we will still get a relative indication.   
 
 ### Round Robin
 The RR scheduler switches processes every tick. This overhead in the number of context switches will be reflected in the run time. However running another process while the benchmark program was running (used ps here) was smooth, as it got time slices intermittently. 
 ```
-Wait : 1317
+Sleep : 1317
 ```
 
 ### First Come First Serve
 The FCFS scheduler doesn't preempt processes. This means that the number of context switches is very low, and hence total run time will be low, but the processes response time is very long. If we try and run another process while the benchmark process is running, it will wait for the previous processes to terminate. This is not a desirable property in an operating system (no multiprogramming).
 ```
-Wait : 1260
+Sleep : 1260
 ```
 
 ### Priority Based
 The priority based scheduler is intended to work when we have 'urgent' and 'non urgent' tasks. To simulate this, priorities were simply assigned (99 to odd processes and 100 to even processes). The round robin scheduling algorithm was used between processes that had the same priority. We should observe performance close to RR scheduling. However, this is not the optimum way to use the priority based scheduler and assigning priorities was not a concern during development. Commands introduced during the execution of the benchmark command work normally. 
 ```
-Wait : 1369
+Sleep : 1369
 ```
 
 ## Multi Level Feedback Queue
 The multi level feedback queue works best when there's a wide spread of types of processes. Since all the processes in our example are similar, we don't see the benefits of MLFQ. Running a new process works normally. The MLFQ scheduler is designed to filter processes that have short CPU bursts, and grant them CPU time frequently. 
 ```
-Wait : 1359
+Sleep : 1359
 ```
 
 ## Plotting movement of processes between queues
